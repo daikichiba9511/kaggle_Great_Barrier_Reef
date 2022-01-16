@@ -1,8 +1,7 @@
 SHELL=/bin/bash
-POETRY_VERSION=1.1.10
 CUML_HOME=./cuml
 
-POETRY = pip3 install -q poetry==${POETRY_VERSION}
+POETRY = pip3 install -q poetry
 
 CUML = git clone https://github.com/rapidsai/cuml.git ${CUML_HOME} \
 		&& cd ${CUML_HOME}/cpp \
@@ -14,13 +13,16 @@ CUML = git clone https://github.com/rapidsai/cuml.git ${CUML_HOME} \
 		&& python setup.py build_ext --inplace \
 		&& python setup.py install
 
+PACAKGE = black mypy isort flake8 python-box bbox-utility
+TORCH = torch==1.10.0+cu113 torchvision==0.11.1+cu113 torchaudio==0.10.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
 
 poetry:
 	${POETRY}
 
-set:
-	${POETRY} \
-	&& poetry isntall
+setup: ## setup package on kaggle docker image
+	python -m pip install ${PACAKGE} \
+	&& python -m pip install ${TORCH} \
+	&& sh ./install-yolov5.sh
 
 develop: # usually use this command
 	${POETRY} \
@@ -30,7 +32,7 @@ develop: # usually use this command
 
 develop_no_venv:
 	${POETRY} \
-	&& poetry config virtualenvs.create false --local \
+	&& poetry config virtualenvs.create false \
 	&& poetry install \
 
 set_tpu:

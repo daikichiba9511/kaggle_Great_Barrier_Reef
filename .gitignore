@@ -130,5 +130,8 @@ dmypy.json
 
 input
 output
-
 .devcontainer
+yolov5
+*.pt
+wandb
+great-barrier-reef-public

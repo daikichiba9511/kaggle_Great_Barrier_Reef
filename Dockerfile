@@ -1,10 +1,11 @@
 FROM gcr.io/kaggle-gpu-images/python:latest
 
-COPY ./ ./
+COPY pyproject.toml poetry.lock ./
 RUN apt-get update && apt-get upgrade -y \
         && apt-get install -y \
         python-is-python3 \
         git
 
-RUN pip install poetry \
-        && make develop_no_venv
+RUN pip install poetry
+
+COPY ./ ./

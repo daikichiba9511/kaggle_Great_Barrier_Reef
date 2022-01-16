@@ -6,6 +6,8 @@ authors = ["daikichiba9511 <daikichiba.tech.ml@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.7"
+python-box = "^5.4.1"
+bbox-utility = "^1.0.9"
 
 [tool.poetry.dev-dependencies]
 black = "^21.9b0"

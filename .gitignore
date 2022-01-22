@@ -134,4 +134,7 @@ output
 yolov5
 *.pt
 wandb
-great-barrier-reef-public
+great-barrier-reef-yolov5
+
+*.ipynb
+eda/videos

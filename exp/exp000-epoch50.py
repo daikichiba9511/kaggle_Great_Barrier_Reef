@@ -1,4 +1,6 @@
-"""exp000
+"""exp000-epoch50
+
+学習曲線が一度上昇するけど下がり始めにも見えるからepochを伸ばしてみる
 
 baseline
 
@@ -71,7 +73,7 @@ config = {
     "fold": 3,  # validation fold
     "n_splits": 3,
     "train_fold": [0, 1, 2],
-    "epochs": 25,
+    "epochs": 50,
     "dim": 1280,
     "model": {"name": "yolov5m"},
     "batch_size": -1,  # if batch_size == 1, yolov5 trainer estimates batch_size

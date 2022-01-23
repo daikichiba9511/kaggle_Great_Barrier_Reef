@@ -17,6 +17,7 @@ import subprocess
 
 import numpy as np
 import yaml
+from sympy import randMatrix
 from tqdm.auto import tqdm
 
 tqdm.pandas()
@@ -71,11 +72,11 @@ config = {
     "seed": 42,
     "train": True,
     "inference": False,
-    "fold": 3,  # validation fold
-    "n_splits": 3,
-    "train_fold": [0, 1, 2],
-    "epochs": 25,
-    "dim": 1280,
+    "fold": 0,  # validation fold if you run all, fold is updated
+    "n_splits": 5,
+    "train_fold": [0, 1, 2, 3, 4],
+    "epochs": 10,
+    "dim": 3000,
     "model": {"name": "yolov5m"},
     "batch_size": -1,  # if batch_size == 1, yolov5 trainer estimates batch_size
     "remove_nobbox": True,
@@ -93,7 +94,9 @@ Path(config["out_lbl_dir"]).mkdir(parents=True, exist_ok=True)
 def get_df(
     config, data_dir: str = "./input/tensorflow-great-barrier-reef"
 ) -> pd.DataFrame:
-    df = pd.read_csv(f"{data_dir}/train.csv")
+    df = pd.read_csv(
+        ROOT / "input" / "cross-validation" / f"train-{config.n_splits}folds.csv"
+    )
     df.loc[:, ["old_img_path"]] = df["old_image_path"] = (
         f"{data_dir}/train_images/video_"
         + df.video_id.astype(str)
@@ -108,7 +111,13 @@ def get_df(
         f"{Path(config['out_lbl_dir']).resolve()}/" + df.image_id + ".txt"
     )
     df.loc[:, ["annotations"]] = df["annotations"].progress_apply(eval)
-    print(df.head(2))
+    print("#" * 20 + " check dataframe " + "#" * 20)
+    print(df.head())
+    print("image_path: ")
+    print(df["image_path"].values[0])
+    print("annotations: ")
+    print(df["annotations"].values)
+    print(df.columns)
     return df
 
 
@@ -157,18 +166,29 @@ def create_labels(df: pd.DataFrame) -> pd.DataFrame:
     return df, bboxes_info, all_bboxes
 
 
-def create_fold(df: pd.DataFrame, config, is_gkf: bool = False) -> pd.DataFrame:
-    if is_gkf:
-        from sklearn.model_selection import GroupKFold
+def create_fold(df: pd.DataFrame, config, is_skf: bool = False) -> pd.DataFrame:
+    """
 
-        kf = GroupKFold(n_splits=config.n_splits)
-        df = df.reset_index(drop=True)
-        df.loc[:, ["fold"]] = -1
-        for fold, (train_idx, val_idx) in enumerate(
-            kf.split(df, y=df.video_id.tolist(), groups=df.sequence)
+    Reference:
+        [1] https://www.kaggle.com/julian3833/reef-a-cv-strategy-subsequences
+    """
+    if is_skf:
+        # NOTE : it might be bugs or some mistake
+        print("\n" + "#" * 10 + " Stratified KFold " + "#" * 10 + "\n")
+        from sklearn.model_selection import StratifiedKFold
+
+        kf = StratifiedKFold(n_splits=config.n_splits, shuffle=True, random_state=42)
+        print(df["subsequence_id"].unique())
+        for fold_idx, (_, val_idx) in enumerate(
+            kf.split(df["subsequence_id"], y=df["has_annotations"])
         ):
-            df.loc[val_idx, "fold"] = fold
-        print(df.fold.value_counts())
+            print(fold_idx)
+            subseq_val_idx = df["subsequence_id"].iloc[val_idx]
+            df.loc[df["subsequence_id"].isin(subseq_val_idx), "fold"] = fold_idx
+        df.loc[:, "fold"] = df["fold"].astype(int)
+
+        print(df["fold"].unique())
+        print(df["fold"].value_counts(dropna=False))
     else:
         df.loc[:, "fold"] = df.loc[:, "image_path"].map(
             lambda x: Path(x).stem.split("-")[0]
@@ -196,7 +216,7 @@ def bbox_distribution(df, bboxes_info, all_bboxes):
 
 def create_dataset(df, config):
     fold = config.fold
-    print(f" ###### fold{fold} datasets is made. ####### ")
+    print(f"\n ###### fold{fold} datasets is made. ####### ")
     train_files = []
     val_files = []
     train_df = df.query(f"fold!={fold}")
@@ -338,15 +358,19 @@ def train(config):
     df.loc[:, ["bboxes"]] = df.annotations.progress_apply(get_bbox)
 
     # get image size
-    df.loc[:, ["width"]] = 1280
-    df.loc[:, ["height"]] = 720
+    # 縦横比2:1
+    df.loc[:, ["width"]] = config.dim
+    df.loc[:, ["height"]] = config.dim // 2
 
     df, bboxes_info, all_bboxes = create_labels(df)
-    df = create_fold(df, config)
-    bbox_df = bbox_distribution(df, bboxes_info, all_bboxes)
+    # df = create_fold(df, config, is_skf=True)
+    # bbox_df = bbox_distribution(df, bboxes_info, all_bboxes)
     train_df, valid_df, train_files, val_files = create_dataset(df, config)
     create_config(train_df, valid_df, cwd=Path(config.data_dir).resolve())
 
+    print("✅ check the amount of each fold ↓")
+    print(df["fold"].value_counts())
+    expname = Path(__file__).stem
     commands = [
         "python",
         "yolov5/train.py",
@@ -365,7 +389,7 @@ def train(config):
         "--project",
         "great-barrier-reef-yolov5",
         "--name",
-        f"{config.model.name}-dim{config.dim}-fold{config.fold}",
+        f"{expname}-{config.model.name}-dim{config.dim}-fold{config.fold}-rmbb{config.remove_bbox}",
         "--exist-ok",
     ]
 

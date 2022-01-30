@@ -1,6 +1,6 @@
-"""exp004
+"""exp006
 
-forked from exp000
+forked from exp005
 
 subsequence 5-fold CV
 
@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 from pprint import pprint
 from typing import List, Tuple
-
+import torch
 import cv2
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -76,10 +76,12 @@ config = {
     "n_splits": 5,
     "train_fold": [0, 1, 2, 3, 4],
     "epochs": 25,
-    "dim": 3200,
-    "model": {"name": "yolov5m"},
-    "batch_size": -1,  # if batch_size == 1, yolov5 trainer estimates batch_size
+    "dim": 4000,
+    "model": {"name": "yolov5s6"},
+    "batch_size": 4,  # if batch_size == 1, yolov5 trainer estimates batch_size
     "remove_nobbox": True,
+    "with_background": False,
+    "bg_rate": 0.1,
     "data_dir": "./input/tensorflow-great-barrier-reef",
     "out_img_dir": "./output/datasets/images",
     "out_lbl_dir": "./output/datasets/labels",
@@ -347,8 +349,16 @@ def train(config):
     data = (df.num_bbox > 0).value_counts(normalize=True) * 100
     print(f"No BBox: {data[0]:0.2f}% | With BBox: {data[1]:0.2f}%")
 
+    if config.with_background:
+        bg_size = int(df.shape[0] * config.bg_rate)
+        sampled_bg_df = df.query("num_bbox==0").sample(bg_size)
     if config.remove_nobbox:
         df = df.query("num_bbox>0")
+        print("shape of df which is num_bbox>0: ", df.shape)
+        if config.with_background:
+            df = pd.merge([df, sampled_bg_df], asix=0)
+            print(f"shape of df which is num_bbox>0 and including num_bbox==0 with {bg_size} :", df.shase)
+
 
     image_paths = df.old_image_path.tolist()
 
@@ -367,6 +377,8 @@ def train(config):
     # bbox_df = bbox_distribution(df, bboxes_info, all_bboxes)
     train_df, valid_df, train_files, val_files = create_dataset(df, config)
     create_config(train_df, valid_df, cwd=Path(config.data_dir).resolve())
+
+    torch.cuda.empty_cache()
 
     print("✅ check the amount of each fold ↓")
     print(df["fold"].value_counts())
@@ -393,9 +405,13 @@ def train(config):
         "--name",
         f"{expname}-{config.model.name}-dim{config.dim}-fold{config.fold}-epoch{config.epochs}",
         "--exist-ok",
+        "--cache",
+        "disk"
     ]
 
     subprocess.run(commands)
+
+    torch.cuda.empty_cache()
 
 
 def main(config):

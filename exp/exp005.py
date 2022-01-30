@@ -1,6 +1,6 @@
-"""exp004
+"""exp005
 
-forked from exp000
+forked from exp004
 
 subsequence 5-fold CV
 
@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 from pprint import pprint
 from typing import List, Tuple
-
+import torch
 import cv2
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -76,7 +76,7 @@ config = {
     "n_splits": 5,
     "train_fold": [0, 1, 2, 3, 4],
     "epochs": 25,
-    "dim": 3200,
+    "dim": 3680,
     "model": {"name": "yolov5m"},
     "batch_size": -1,  # if batch_size == 1, yolov5 trainer estimates batch_size
     "remove_nobbox": True,
@@ -368,6 +368,8 @@ def train(config):
     train_df, valid_df, train_files, val_files = create_dataset(df, config)
     create_config(train_df, valid_df, cwd=Path(config.data_dir).resolve())
 
+    torch.cuda.empty_cache()
+
     print("✅ check the amount of each fold ↓")
     print(df["fold"].value_counts())
     expname = Path(__file__).stem
@@ -393,9 +395,13 @@ def train(config):
         "--name",
         f"{expname}-{config.model.name}-dim{config.dim}-fold{config.fold}-epoch{config.epochs}",
         "--exist-ok",
+        "--cache",
+        "disk"
     ]
 
     subprocess.run(commands)
+
+    torch.cuda.empty_cache()
 
 
 def main(config):

@@ -82,3 +82,6 @@ def imagewise_f2_score(gt_bboxes, pred_bboxes, verbose=False):
             imagewise_f2_score_at_iou_th(gt_bboxes, pred_bboxes, iou_th, verbose)
         )
     return np.mean(scores)
+
+def calc_f_beta(recall, precision, beta: int = 1):
+    return ((1 + beta ** 2) * precision * recall) / (beta ** 2 * precision + recall)

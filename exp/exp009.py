@@ -1,8 +1,8 @@
-"""exp008
+"""exp009
 
-forked from exp008
+forked from exp009
 
-subsequence 5-fold CV
+subsequence 10-fold CV
 
 
 submission format is COCO means [x_min, y_min, width, height]
@@ -76,8 +76,8 @@ config = {
     "n_splits": 10,
     "train_fold": [0, 1, 2, 3, 4],
     "epochs": 25,
-    "dim": 4992,
-    "model": {"name": "yolov5s6"},
+    "dim": 3520,
+    "model": {"name": "yolov5m6"},
     "batch_size": -1,  # if batch_size == 1, yolov5 trainer estimates batch_size
     "remove_nobbox": True,
     "with_background": True,
@@ -348,13 +348,14 @@ def train(config):
     df.loc[:, ["num_bbox"]] = df["annotations"].progress_apply(lambda x: len(x))
     data = (df.num_bbox > 0).value_counts(normalize=True) * 100
     print(f"No BBox: {data[0]:0.2f}% | With BBox: {data[1]:0.2f}%")
-    raw_df = df
+
+    if config.with_background:
+        bg_size = int(df.shape[0] * config.bg_rate)
+        sampled_bg_df = df.query("num_bbox==0").sample(bg_size)
     if config.remove_nobbox:
-        df = raw_df.query("num_bbox>0")
+        df = df.query("num_bbox>0")
         print("shape of df which is num_bbox>0: ", df.shape)
         if config.with_background:
-            bg_size = int(df.shape[0] * config.bg_rate)
-            sampled_bg_df = raw_df.query("num_bbox==0").sample(bg_size, random_state=42)
             df = pd.concat([df, sampled_bg_df], axis=0)
             print(f"shape of df which is num_bbox>0 and including num_bbox==0 with {bg_size} :", df.shape)
 
@@ -402,7 +403,7 @@ def train(config):
         "--project",
         "great-barrier-reef-yolov5",
         "--name",
-        f"{expname}-{config.model.name}-dim{config.dim}-fold{config.fold}-epoch{config.epochs}-sampled-numbbox",
+        f"{expname}-{config.model.name}-dim{config.dim}-fold{config.fold}-epoch{config.epochs}",
         "--exist-ok",
         "--cache",
         "disk"

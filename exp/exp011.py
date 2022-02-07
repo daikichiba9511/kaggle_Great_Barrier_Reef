@@ -1,4 +1,4 @@
-"""exp008
+"""exp011
 
 forked from exp008
 
@@ -28,24 +28,16 @@ import sys
 from pathlib import Path
 from pprint import pprint
 from typing import List, Tuple
-import torch
+
 import cv2
 import matplotlib.pyplot as plt
 import pandas as pd
+import torch
 from box import Box
 
 sys.path.append("../input/tensorflow-great-barrier-reef")
 
-from bbox.utils import (
-    annot2str,
-    clip_bbox,
-    coco2voc,
-    coco2yolo,
-    draw_bboxes,
-    load_image,
-    str2annot,
-    voc2yolo,
-)
+from bbox.utils import annot2str, clip_bbox, coco2voc, coco2yolo, draw_bboxes, load_image, str2annot, voc2yolo
 
 # from IPython.display import HTML, display
 from joblib import Parallel, delayed
@@ -75,13 +67,13 @@ config = {
     "fold": 0,  # validation fold if you run all, fold is updated
     "n_splits": 10,
     "train_fold": [0, 1, 2, 3, 4],
-    "epochs": 25,
-    "dim": 4992,
-    "model": {"name": "yolov5s6"},
-    "batch_size": -1,  # if batch_size == 1, yolov5 trainer estimates batch_size
+    "epochs": 30,
+    "dim": int(32 * 45),  # 32 * 40 = 1280
+    "model": {"name": "yolov5l6"},
+    "batch_size": 8,  # if batch_size == 1, yolov5 trainer estimates batch_size
     "remove_nobbox": True,
     "with_background": True,
-    "bg_rate": 0.1,
+    "bg_rate": 0.1 * 5.0,
     "data_dir": "./input/tensorflow-great-barrier-reef",
     "out_img_dir": "./output/datasets/images",
     "out_lbl_dir": "./output/datasets/labels",
@@ -93,25 +85,13 @@ Path(config["out_img_dir"]).mkdir(parents=True, exist_ok=True)
 Path(config["out_lbl_dir"]).mkdir(parents=True, exist_ok=True)
 
 
-def get_df(
-    config, data_dir: str = "./input/tensorflow-great-barrier-reef"
-) -> pd.DataFrame:
-    df = pd.read_csv(
-        ROOT / "input" / "cross-validation" / f"train-{config.n_splits}folds.csv"
-    )
+def get_df(config, data_dir: str = "./input/tensorflow-great-barrier-reef") -> pd.DataFrame:
+    df = pd.read_csv(ROOT / "input" / "cross-validation" / f"train-{config.n_splits}folds.csv")
     df.loc[:, ["old_img_path"]] = df["old_image_path"] = (
-        f"{data_dir}/train_images/video_"
-        + df.video_id.astype(str)
-        + "/"
-        + df.video_frame.astype(str)
-        + ".jpg"
+        f"{data_dir}/train_images/video_" + df.video_id.astype(str) + "/" + df.video_frame.astype(str) + ".jpg"
     )
-    df.loc[:, ["image_path"]] = (
-        f"{Path(config['out_img_dir']).resolve()}/" + df.image_id + ".jpg"
-    )
-    df.loc[:, ["label_path"]] = (
-        f"{Path(config['out_lbl_dir']).resolve()}/" + df.image_id + ".txt"
-    )
+    df.loc[:, ["image_path"]] = f"{Path(config['out_img_dir']).resolve()}/" + df.image_id + ".jpg"
+    df.loc[:, ["label_path"]] = f"{Path(config['out_lbl_dir']).resolve()}/" + df.image_id + ".txt"
     df.loc[:, ["annotations"]] = df["annotations"].progress_apply(eval)
     print("#" * 20 + " check dataframe " + "#" * 20)
     print(df.head())
@@ -158,9 +138,7 @@ def create_labels(df: pd.DataFrame) -> pd.DataFrame:
             bboxes_voc = clip_bbox(bboxes_voc, image_height, image_width)
             bboxes_yolo = voc2yolo(bboxes_voc, image_height, image_width).astype(str)
             all_bboxes.extend(bboxes_yolo.astype(float))
-            bboxes_info.extend(
-                [[row.image_id, row.video_id, row.sequence]] * len(bboxes_yolo)
-            )
+            bboxes_info.extend([[row.image_id, row.video_id, row.sequence]] * len(bboxes_yolo))
             annots = np.concatenate([labels, bboxes_yolo], axis=1)
             string = annot2str(annots)
             f.write(string)
@@ -181,9 +159,7 @@ def create_fold(df: pd.DataFrame, config, is_skf: bool = False) -> pd.DataFrame:
 
         kf = StratifiedKFold(n_splits=config.n_splits, shuffle=True, random_state=42)
         print(df["subsequence_id"].unique())
-        for fold_idx, (_, val_idx) in enumerate(
-            kf.split(df["subsequence_id"], y=df["has_annotations"])
-        ):
+        for fold_idx, (_, val_idx) in enumerate(kf.split(df["subsequence_id"], y=df["has_annotations"])):
             print(fold_idx)
             subseq_val_idx = df["subsequence_id"].iloc[val_idx]
             df.loc[df["subsequence_id"].isin(subseq_val_idx), "fold"] = fold_idx
@@ -192,9 +168,7 @@ def create_fold(df: pd.DataFrame, config, is_skf: bool = False) -> pd.DataFrame:
         print(df["fold"].unique())
         print(df["fold"].value_counts(dropna=False))
     else:
-        df.loc[:, "fold"] = df.loc[:, "image_path"].map(
-            lambda x: Path(x).stem.split("-")[0]
-        )
+        df.loc[:, "fold"] = df.loc[:, "image_path"].map(lambda x: Path(x).stem.split("-")[0])
         df.loc[:, "fold"] = df.loc[:, "fold"].astype(int)
         print(df.fold.value_counts())
         assert (
@@ -208,9 +182,7 @@ def bbox_distribution(df, bboxes_info, all_bboxes):
         np.concatenate([bboxes_info, all_bboxes], axis=1),
         columns=["image_id", "video_id", "sequence", "xmid", "ymid", "w", "h"],
     )
-    bbox_df.loc[:, ["xmid", "ymid", "w", "h"]] = bbox_df[
-        ["xmid", "ymid", "w", "h"]
-    ].astype(float)
+    bbox_df.loc[:, ["xmid", "ymid", "w", "h"]] = bbox_df[["xmid", "ymid", "w", "h"]].astype(float)
     bbox_df.loc[:, ["area"]] = bbox_df.w * bbox_df.h * 1280 * 720
     bbox_df = bbox_df.merge(df[["image_id", "fold"]], on="image_id", how="left")
     return bbox_df
@@ -227,9 +199,7 @@ def create_dataset(df, config):
     print("valid_df.shape: ", valid_df.shape)
     train_files += list(train_df.image_path.unique())
     val_files += list(valid_df.image_path.unique())
-    print(
-        "train_files: " + str(len(train_files)), ", val_files: " + str(len(val_files))
-    )
+    print("train_files: " + str(len(train_files)), ", val_files: " + str(len(val_files)))
     return train_df, valid_df, train_files, val_files
 
 
@@ -269,20 +239,14 @@ def calc_iou(a: Coordinates, b: Coordinates) -> float:
     elif ((a_x1 <= b_x1 and a_x2 > b_x1) or (a_x1 >= b_x1 and b_x2 > a_x1)) and (
         (a_y1 <= b_y1 and a_y2 > b_y1) or (a_y1 >= b_y1 and b_y2 > a_y1)
     ):
-        intersection = (min(a_x2, b_x2) - max(a_x1, b_x1)) * (
-            min(a_y2, b_y2) - max(a_y1, b_y1)
-        )
-        union = (
-            (a_x2 - a_x1) * (a_y2 - a_y1) + (b_x2 - b_x1) * (b_y2 - b_y1) - intersection
-        )
+        intersection = (min(a_x2, b_x2) - max(a_x1, b_x1)) * (min(a_y2, b_y2) - max(a_y1, b_y1))
+        union = (a_x2 - a_x1) * (a_y2 - a_y1) + (b_x2 - b_x1) * (b_y2 - b_y1) - intersection
         return intersection / union
     else:
         return 0.0
 
 
-def fuse_wbf(
-    bboxes: List[Coordinates], scores: List[float], iou_threshold: float, n: int
-) -> Tuple[List, List]:
+def fuse_wbf(bboxes: List[Coordinates], scores: List[float], iou_threshold: float, n: int) -> Tuple[List, List]:
     """Weighted Boxes Fusion
 
     Ref:
@@ -301,14 +265,10 @@ def fuse_wbf(
                 lists[j].append(bboxes[i])
                 confidences[j].append(scores[i])
                 fusions[j] = (
-                    sum(coords[0] * c for coords, c in zip(lists[j], confidences[j]))
-                    / sum(confidences[j]),
-                    sum(coords[1] * c for coords, c in zip(lists[j], confidences[j]))
-                    / sum(confidences[j]),
-                    sum(coords[2] * c for coords, c in zip(lists[j], confidences[j]))
-                    / sum(confidences[j]),
-                    sum(coords[3] * c for coords, c in zip(lists[j], confidences[j]))
-                    / sum(confidences[j]),
+                    sum(coords[0] * c for coords, c in zip(lists[j], confidences[j])) / sum(confidences[j]),
+                    sum(coords[1] * c for coords, c in zip(lists[j], confidences[j])) / sum(confidences[j]),
+                    sum(coords[2] * c for coords, c in zip(lists[j], confidences[j])) / sum(confidences[j]),
+                    sum(coords[3] * c for coords, c in zip(lists[j], confidences[j])) / sum(confidences[j]),
                 )
                 new_fusion = False
         if new_fusion:
@@ -358,8 +318,12 @@ def train(config):
             df = pd.concat([df, sampled_bg_df], axis=0)
             print(f"shape of df which is num_bbox>0 and including num_bbox==0 with {bg_size} :", df.shape)
 
+    print(" ######## final bbox rate ########## ")
+    data = (df.num_bbox > 0).value_counts(normalize=True) * 100
+    print(f"No BBox: {data[0]:0.2f}% | With BBox: {data[1]:0.2f}%")
+    print()
 
-    image_paths = df.old_image_path.tolist()
+    # image_paths = df.old_image_path.tolist()
 
     _ = Parallel(n_jobs=-1, backend="threading")(
         delayed(make_copy)(row) for _, row in tqdm(df.iterrows(), total=len(df))
@@ -405,7 +369,7 @@ def train(config):
         f"{expname}-{config.model.name}-dim{config.dim}-fold{config.fold}-epoch{config.epochs}-sampled-numbbox",
         "--exist-ok",
         "--cache",
-        "disk"
+        "disk",
     ]
 
     subprocess.run(commands)

@@ -132,9 +132,12 @@ input
 output
 .devcontainer
 yolov5
+YOLOX
 *.pt
 wandb
 great-barrier-reef-yolov5
 
 *.ipynb
 eda/videos
+
+*.pth

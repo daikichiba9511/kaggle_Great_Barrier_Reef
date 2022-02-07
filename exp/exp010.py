@@ -1,8 +1,8 @@
-"""exp008
+"""exp010
 
 forked from exp008
 
-subsequence 5-fold CV
+subsequence 10-fold CV
 
 
 submission format is COCO means [x_min, y_min, width, height]
@@ -75,13 +75,13 @@ config = {
     "fold": 0,  # validation fold if you run all, fold is updated
     "n_splits": 10,
     "train_fold": [0, 1, 2, 3, 4],
-    "epochs": 25,
+    "epochs": 75,
     "dim": 4992,
     "model": {"name": "yolov5s6"},
     "batch_size": -1,  # if batch_size == 1, yolov5 trainer estimates batch_size
     "remove_nobbox": True,
     "with_background": True,
-    "bg_rate": 0.1,
+    "bg_rate": 0.2,
     "data_dir": "./input/tensorflow-great-barrier-reef",
     "out_img_dir": "./output/datasets/images",
     "out_lbl_dir": "./output/datasets/labels",

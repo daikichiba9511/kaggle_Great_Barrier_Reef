@@ -13,15 +13,15 @@ CUML = git clone https://github.com/rapidsai/cuml.git ${CUML_HOME} \
 		&& python setup.py build_ext --inplace \
 		&& python setup.py install
 
-PACAKGE = black mypy isort flake8 python-box bbox-utility norfair==0.3.1
-TORCH = torch==1.10.0+cu113 torchvision==0.11.1+cu113 torchaudio==0.10.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+PACAKGE = black mypy isort flake8 python-box bbox-utility norfair==0.3.1 pytorch-lightning timm==0.5.4 torchmetrics
+TORCH = torch==1.10.0+cu113 torchvision==0.11.1+cu113 torchaudio==0.10.0+cu113 torchtext -f https://download.pytorch.org/whl/cu113/torch_stable.html
 
 poetry:
 	${POETRY}
 
 setup: ## setup package on kaggle docker image
 	python -m pip install ${PACAKGE} \
-	&& python -m pip install ${TORCH} \
+	&& pip install ${TORCH} \
 	&& sh ./install-yolov5.sh
 
 develop: # usually use this command

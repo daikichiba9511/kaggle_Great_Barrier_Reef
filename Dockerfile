@@ -7,5 +7,3 @@ RUN apt-get update && apt-get upgrade -y \
         git
 
 RUN pip install poetry
-
-COPY ./ ./

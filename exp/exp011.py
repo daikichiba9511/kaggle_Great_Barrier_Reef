@@ -73,7 +73,7 @@ config = {
     "batch_size": 8,  # if batch_size == 1, yolov5 trainer estimates batch_size
     "remove_nobbox": True,
     "with_background": True,
-    "bg_rate": 0.1 * 5.0,
+    "bg_rate": 0.12,
     "data_dir": "./input/tensorflow-great-barrier-reef",
     "out_img_dir": "./output/datasets/images",
     "out_lbl_dir": "./output/datasets/labels",

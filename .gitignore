@@ -141,3 +141,11 @@ great-barrier-reef-yolov5
 eda/videos
 
 *.pth
+
+/dev
+/etc
+tf_logs
+*.json
+labels.txt
+images
+mmdetection

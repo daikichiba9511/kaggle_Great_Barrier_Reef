@@ -36,7 +36,7 @@ def f_beta(tp, fp, fn, beta=2):
     return (1 + beta ** 2) * tp / ((1 + beta ** 2) * tp + beta ** 2 * fn + fp)
 
 
-def imagewise_f2_score_at_iou_th(gt_bboxes, pred_bboxes, iou_th, verbose=False):
+def imagewise__score_at_iou_th(gt_bboxes, pred_bboxes, iou_th, verbose=False):
     gt_bboxes = gt_bboxes.copy()
     pred_bboxes = pred_bboxes.copy()
 
@@ -57,13 +57,11 @@ def imagewise_f2_score_at_iou_th(gt_bboxes, pred_bboxes, iou_th, verbose=False):
     fn = len(gt_bboxes)
     score = f_beta(tp, fp, fn, beta=2)
     if verbose:
-        print(
-            f"iou_th:{iou_th.round(2):<4} tp:{tp:<2}, fp:{fp:<2}, fn:{fn:<2} f2:{score:.3}"
-        )
+        print(f"iou_th:{iou_th.round(2):<4} tp:{tp:<2}, fp:{fp:<2}, fn:{fn:<2} :{score:.3}")
     return score
 
 
-def imagewise_f2_score(gt_bboxes, pred_bboxes, verbose=False):
+def imagewise__score(gt_bboxes, pred_bboxes, verbose=False):
     """
     gt_bboxes: (N, 4) np.array in xywh format
     pred_bboxes: (N, 5) np.array in conf+xywh format
@@ -78,10 +76,9 @@ def imagewise_f2_score(gt_bboxes, pred_bboxes, verbose=False):
 
     scores = []
     for iou_th in np.arange(0.3, 0.85, 0.05):
-        scores.append(
-            imagewise_f2_score_at_iou_th(gt_bboxes, pred_bboxes, iou_th, verbose)
-        )
+        scores.append(imagewise__score_at_iou_th(gt_bboxes, pred_bboxes, iou_th, verbose))
     return np.mean(scores)
+
 
 def calc_f_beta(recall, precision, beta: int = 1):
     return ((1 + beta ** 2) * precision * recall) / (beta ** 2 * precision + recall)

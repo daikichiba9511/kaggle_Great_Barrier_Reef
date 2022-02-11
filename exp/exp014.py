@@ -57,6 +57,14 @@ def load_model(ckpt_path, conf=0.25, iou=0.50, device: str = "cpu"):
     model.max_det = 1000  # maximum number of detections per image
     return model
 
+def load_model_exp(path: Path, fold: int = 0):
+    from exp.exp015 import MyLitModel, config
+    model = MyLitModel(
+        config=config,
+        fold=fold
+    )
+    model.load_from_checkpoint(str(path))
+    return model
 
 def get_df(config, data_dir: str = "./input/tensorflow-great-barrier-reef") -> pd.DataFrame:
     df = pd.read_csv(ROOT / "input" / "cross-validation" / f"train-{config.n_splits}folds.csv")
@@ -95,19 +103,30 @@ def euclidean_distance(detection, tracked_object):
 
 
 def main(config):
+    use_no_bbox = False
     df = get_df(config)
 
     # Number of annotaions == 0
-    df.loc[:, ["num_bbox"]] = df["annotations"].map(lambda x: len(x))
-    data = (df.num_bbox > 0).value_counts(normalize=True) * 100
-    print(f"No BBox: {data[0]:0.2f}% | With BBox: {data[1]:0.2f}%")
-    val_no_bbox_df = df[df["num_bbox"] == 0]
-    print("shape of val_no_bbox_df: ", val_no_bbox_df.shape)
-    val_no_bbox_dataset = RGBDataset(df=val_no_bbox_df, config=config)
-    val_loader = DataLoader(
-        val_no_bbox_dataset, batch_size=config.batch_size, shuffle=False, num_workers=8, pin_memory=False
-    )
-    model = load_model(config.model.ckpt_path, conf=0.20, iou=0.4, device=config.device)
+    if use_no_bbox:
+        df.loc[:, ["num_bbox"]] = df["annotations"].map(lambda x: len(x))
+        data = (df.num_bbox > 0).value_counts(normalize=True) * 100
+        print(f"No BBox: {data[0]:0.2f}% | With BBox: {data[1]:0.2f}%")
+        val_no_bbox_df = df[df["num_bbox"] == 0]
+        print("shape of val_no_bbox_df: ", val_no_bbox_df.shape)
+        val_no_bbox_dataset = RGBDataset(df=val_no_bbox_df, config=config)
+        val_loader = DataLoader(
+            val_no_bbox_dataset, batch_size=config.batch_size, shuffle=False, num_workers=8, pin_memory=False
+        )
+        model = load_model(config.model.ckpt_path, conf=0.20, iou=0.4, device=config.device)
+    else:
+        fold = 0
+        model_path = Path("output") / ""
+
+        val_df = df[df["fold"] == fold]
+        val_dataset = RGBDataset(df=val_df, config=config)
+        val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, num_workers=16, pin_memory=True)
+        model = load_model_exp(path=model_path, fold=fold)
+
     tracker = Tracker(
         distance_function=euclidean_distance,
         distance_threshold=30,
@@ -124,7 +143,8 @@ def main(config):
         detects = []
         anno = ""
         print("Image Shape: ", image.shape)
-        output = model(image, size=10000, augment=True)
+        with torch.inference_mode():        preds = torch.where(preds >= 0.5, 1, 0).to(dtype=torch.int32)
+            output = model(image, size=10000, augment=True)
         print(type(output))
         break
         if output.pandas().xyxy[0].shape[0] == 0:

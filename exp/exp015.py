@@ -28,29 +28,32 @@ import shutil
 import sys
 from pathlib import Path
 from pprint import pprint
-from typing import List, Tuple, Optional
-import pytorch_lightning as pl
+from typing import List, Optional, Tuple
+
 import cv2
 import matplotlib.pyplot as plt
 import pandas as pd
+import pytorch_lightning as pl
+import timm
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import torchmetrics
+import torchvision.transforms as T
+from box import Box
+from PIL import Image
 from pytorch_lightning import LightningDataModule, LightningModule, callbacks
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.progress import ProgressBarBase
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-import torchvision.transforms as T
-from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import StratifiedKFold
-from PIL import Image
-from box import Box
-import timm
-import torchmetrics
+from torch.utils.data import DataLoader, Dataset
 
 sys.path.append("../input/tensorflow-great-barrier-reef")
+
+from pprint import pprint
 
 from bbox.utils import annot2str, clip_bbox, coco2voc, coco2yolo, draw_bboxes, load_image, str2annot, voc2yolo
 
@@ -84,18 +87,15 @@ config = {
     "train_fold": [0],
     "epochs": 10,
     "dim": int(32 * 100),  # 32 * 40 = 1280
-    "model": {"name": "resnet152d", "pretrained": True, "layer_freeze": False},
-    "batch_size": 32 // 2,  # if batch_size == 1, yolov5 trainer estimates batch_size
-    "remove_nobbox": True,
-    "with_background": True,
-    "bg_rate": 0.1 * 5.0,
+    "model": {"name": "resnet18", "pretrained": True, "layer_freeze": False},
+    "batch_size": 128,  # if batch_size == 1, yolov5 trainer estimates batch_size
     "data_dir": "./input/tensorflow-great-barrier-reef",
     "binary_dir": "./input/binary-cots",
     "out_img_dir": "./output/datasets/images",
     "out_lbl_dir": "./output/datasets/labels",
     "optimizer": {
         "name": "optim.AdamW",
-        "params": {"lr": 1e-5},
+        "params": {"lr": 1e-4},
     },
     "scheduler": {
         "name": "optim.lr_scheduler.CosineAnnealingWarmRestarts",
@@ -117,6 +117,7 @@ config = {
 }
 
 config = Box(config)
+pprint(config)
 np.random.seed(config.seed)
 
 
@@ -155,11 +156,12 @@ class MyDataModule(LightningDataModule):
 
     def train_dataloader(self):
         dataset = self.__create_dataset(True)
-        return DataLoader(dataset, self.cfg.batch_size, shuffle=False, num_workers=8, pin_memory=True, drop_last=True)
+        return DataLoader(dataset, self.cfg.batch_size, shuffle=True, num_workers=16, pin_memory=True, drop_last=True)
 
     def val_dataloader(self):
         dataset = self.__create_dataset(False)
-        return DataLoader(dataset, self.cfg.batch_size, shuffle=False, num_workers=8, pin_memory=True)
+        return DataLoader(dataset, self.cfg.batch_size, shuffle=False, num_workers=16, pin_memory=True)
+
 
 class MLP(torch.nn.Module):
     def __init__(self, out_features: int, hidden_size: int) -> None:
@@ -173,6 +175,7 @@ class MLP(torch.nn.Module):
         z1 = self.dropout1(z1)
         logits = self.fc2(z1)
         return logits
+
 
 class MyLitModel(LightningModule):
     def __init__(self, cfg, fold):
@@ -218,9 +221,12 @@ class MyLitModel(LightningModule):
 
     def __share_step(self, batch, mode):
         images, labels = batch
+
         logits = self.forward(images)
+
         labels = labels.reshape(-1, 1)
         loss = self._criterion(logits, labels)
+
         pred = logits.sigmoid().detach().cpu()
         labels = labels.detach().cpu()
         return loss, pred, labels
@@ -240,18 +246,25 @@ class MyLitModel(LightningModule):
             preds.append(pred)
             labels.append(label)
             losses.append(loss.detach().cpu().numpy())
-        preds = torch.cat(preds)
-        labels = torch.cat(labels)
+        preds = torch.cat(preds).to(dtype=torch.float32)
+        labels = torch.cat(labels).to(dtype=torch.int32)
+
         # print("preds: ", preds.shape, "labels: ", labels.shape)
-        acc_mask = torch.where(preds >= 0.5, 1, 0) == labels
-        acc = (acc_mask).sum() / len(acc_mask)
-        assert 0 <= acc <= 1, f"acc : {acc}, preds.shape: {preds.shape}, labels.shpae: {labels.shape} "
+        # acc_mask = torch.where(preds >= 0.5, 1, 0) == labels
+        # acc = (acc_mask).sum() / len(acc_mask)
+        # assert 0 <= acc <= 1, f"acc : {acc}, preds.shape: {preds.shape}, labels.shpae: {labels.shape} "
         # print("ACC: ", acc)
-        self.log(f"{mode}_acc", acc)
-        if mode == "val":
-            self.val_acc(pred, labels)
-            self.log("val_acc", self.accuracy)
-            print("VAL_ACC: ", acc)
+        # self.log(f"{mode}_acc", acc)
+
+        if mode == "train":
+            self.train_acc(preds, labels)
+            self.log("train_acc", self.train_acc, on_epoch=True)
+        elif mode == "val":
+            print("\nVal: \n", preds)
+            self.val_acc(preds, labels)
+            self.log("val_acc", self.val_acc, on_epoch=True)
+            # print("VAL_ACC: ", self.val_acc)
+
         self.log(f"{mode}_loss", np.mean(losses))
 
     def configure_optimizers(self):
@@ -285,12 +298,15 @@ def get_df(config):
     cots_dir_path = Path(config.binary_dir)
     cots_dir = cots_dir_path / "cots_crops"
     not_cots_dir = cots_dir_path / "notcots_crops"
+
     cots_image_paths = list(cots_dir.glob("*.jpg"))
     not_cots_image_paths = list(not_cots_dir.glob("*.jpg"))
     cots = {"image_path": cots_image_paths, "label": [1] * len(cots_image_paths)}
-    df = pd.DataFrame(cots)
     not_cots = {"image_path": not_cots_image_paths, "label": [0] * len(cots_image_paths)}
+
+    df = pd.DataFrame(cots)
     df = pd.concat([df, pd.DataFrame(not_cots)], axis=0)
+
     print("df.shape: ", df.shape)
     print("df['label'].value_counts: \n", df["label"].value_counts())
     return df

@@ -32,6 +32,8 @@ config = Box(
         images_dir=str(ROOT / "./images"),
         train_ann_path=str(ROOT / "./annotations_train.json"),
         val_ann_path=str(ROOT / "./annotations_val.json"),
+        remove_nobbox=True,
+        bg_rate=0.12,
     )
 )
 
@@ -72,22 +74,23 @@ def coco(df):
     annotations = []
 
     categories = [{"id": 0, "name": "cots"}]
+    img_ids = df["image_id"].values
+    annos = df["annotations"].values
 
-    for i, row in tqdm(df.iterrows(), total=len(df)):
-
+    for idx, (img_id, bboxes) in enumerate(tqdm(zip(img_ids, annos))):
         images.append(
             {
-                "id": i,
-                "file_name": f"{row['image_id']}.jpg",
+                "id": idx,
+                "file_name": f"{img_id}.jpg",
                 "height": 720,
                 "width": 1280,
             }
         )
-        for bbox in row["annotations"]:
+        for bbox in bboxes:
             annotations.append(
                 {
                     "id": annotion_id,
-                    "image_id": i,
+                    "image_id": idx,
                     "category_id": 0,
                     "bbox": list(bbox.values()),
                     "area": bbox["width"] * bbox["height"],
@@ -124,12 +127,26 @@ def make_datasets(df, fold, config):
             shutil.copyfile(img_path, dst_file_path)
 
     copy_imgs(train_df, "train")
-    copy_imgs(train_df, "val")
+    copy_imgs(val_df, "val")
 
 
 df = get_df(config)
 make_datasets(df, fold=0, config=config)
 
+df.loc[:, ["num_bbox"]] = df["annotations"].map(lambda x: len(x))
+data = (df.num_bbox > 0).value_counts(normalize=True) * 100
+print(f"No BBox: {data[0]:0.2f}% | With BBox: {data[1]:0.2f}%")
+raw_df = df
+if config.remove_nobbox:
+    df = raw_df.query("num_bbox>0")
+    print("shape of df which is num_bbox>0: ", df.shape)
+    if config.bg_rate:
+        bg_size = int(df.shape[0] * config.bg_rate)
+        sampled_bg_df = raw_df.query("num_bbox==0").sample(bg_size, random_state=42)
+        df = pd.concat([df, sampled_bg_df], axis=0)
+        print(f"shape of df which is num_bbox>0 and including num_bbox==0 with {bg_size} :", df.shape)
+
+# generate config file for mmdetection
 config_contents = """
 
 _base_ = [
@@ -339,12 +356,13 @@ lr_config=dict(
 )
 
 runner=dict(
-    max_epochs=20
+    max_epochs=30
 )
 
 """
 
-config_path = ROOT / "./mmdetection/configs/cascade_rcnn/TFGBR_exp017_cascade_rcnn_r50_fpn_1x_coco.py"
+expname = Path(__file__).stem
+config_path = ROOT / f"./mmdetection/configs/cascade_rcnn/TFGBR_{expname}_cascade_rcnn_r50_fpn_1x_coco.py"
 with config_path.open("w") as f:
     f.write(config_contents)
 
@@ -362,39 +380,40 @@ train_pipeline = [
                 dict(
                     type="Resize",
                     img_scale=[
-                        (4890, 1333),
-                        (512, 1333),
-                        (544, 1333),
-                        (608, 1333),
-                        (640, 1333),
-                        (672, 1333),
-                        (704, 1333),
-                        (736, 1333),
-                        (768, 1333),
+                        # (4890, 1333),
+                        # (512, 1333),
+                        # (544, 1333),
+                        # (608, 1333),
+                        # (640, 1333),
+                        # (672, 1333),
+                        # (704, 1333),
+                        # (736, 1333),
+                        # (768, 1333),
                         (800, 1333),
+                        (3600, 3600),
                     ],
                     multiscale_mode="value",
                     keep_ratio=True,
                 ),
-                dict(type="RandomCrop", crop_type="absolute_range", crop_size=(384, 600), allow_negative_crop=True),
-                dict(
-                    type="Resize",
-                    img_scale=[
-                        (4890, 1333),
-                        (512, 1333),
-                        (544, 1333),
-                        (608, 1333),
-                        (640, 1333),
-                        (672, 1333),
-                        (704, 1333),
-                        (736, 1333),
-                        (768, 1333),
-                        (800, 1333),
-                    ],
-                    multiscale_mode="value",
-                    override=True,
-                    keep_ratio=True,
-                ),
+                # dict(type="RandomCrop", crop_type="absolute_range", crop_size=(384, 600), allow_negative_crop=True),
+                # dict(
+                #     type="Resize",
+                #     img_scale=[
+                #         (4890, 1333),
+                #         (512, 1333),
+                #         (544, 1333),
+                #         (608, 1333),
+                #         (640, 1333),
+                #         (672, 1333),
+                #         (704, 1333),
+                #         (736, 1333),
+                #         (768, 1333),
+                #         (800, 1333),
+                #     ],
+                #     multiscale_mode="value",
+                #     override=True,
+                #     keep_ratio=True,
+                # ),
                 dict(
                     type="PhotoMetricDistortion",
                     brightness_delta=32,
@@ -423,6 +442,9 @@ train_pipeline = [
             ]
         ],
     ),
+    # Not Found at CocoDataset...
+    # dict(type="Blur", blur_limit=3, p=0.05),
+    # dict(type="MedianBlur", blur_limit=3, p=1.0),
     dict(type="RandomFlip", flip_ratio=0.5),
     dict(type="Normalize", **img_norm_cfg),
     dict(type="Pad", size_divisor=32),
@@ -434,7 +456,7 @@ test_pipeline = [
     dict(type="LoadImageFromFile"),
     dict(
         type="MultiScaleFlipAug",
-        img_scale=(1333, 800),
+        img_scale=(3600, 3600),
         flip=False,
         transforms=[
             dict(
@@ -459,7 +481,7 @@ train_ann_path = ROOT / "./annotations_train.json"
 valid_ann_path = ROOT / "./annotations_val.json"
 
 train_imgs_path = ROOT / "./images/train"
-valid_imgs_path = ROOT / "./images/valid"
+valid_imgs_path = ROOT / "./images/val"
 
 # check dirs
 for path in [train_ann_path, valid_ann_path, train_imgs_path, valid_imgs_path]:
@@ -492,7 +514,7 @@ cfg.data.val.pipeline = cfg.val_pipeline
 cfg.data.test.pipeline = cfg.test_pipeline
 
 cfg.lr_config = dict(
-    policy="CosineAnnealing", by_epoch=False, warmup="linear", warmup_iters=1000, warmup_ratio=1 / 10, min_lr=1e-7
+    policy="CosineAnnealing", by_epoch=True, warmup="linear", warmup_iters=1000, warmup_ratio=1 / 10, min_lr=1e-7
 )
 
 cfg.evaluation.interval = 2

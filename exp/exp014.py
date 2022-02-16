@@ -143,10 +143,9 @@ def main(config):
         detects = []
         anno = ""
         print("Image Shape: ", image.shape)
-        with torch.inference_mode():        preds = torch.where(preds >= 0.5, 1, 0).to(dtype=torch.int32)
+        with torch.inference_mode():
             output = model(image, size=10000, augment=True)
         print(type(output))
-        break
         if output.pandas().xyxy[0].shape[0] == 0:
             anno = ""
         else:
